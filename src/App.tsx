@@ -261,6 +261,12 @@ export default function App() {
     });
   };
 
+  // Update dataset state and persist to local storage (e.g. from macro simulation)
+  const handleUpdateDataset = (updatedDataset: Dataset) => {
+    setDataset(updatedDataset);
+    saveLocalDatasets([updatedDataset]);
+  };
+
   // Filter widgets by active sheet
   const activeSheetWidgets = useMemo(() => {
     return widgets.filter((w) => w.sheetName === activeSheetName || !w.sheetName);
@@ -749,6 +755,7 @@ export default function App() {
           <LegacyMacroStudio
             dataset={dataset}
             onUpdateMacros={handleUpdateMacros}
+            onUpdateDataset={handleUpdateDataset}
           />
         )}
       </main>

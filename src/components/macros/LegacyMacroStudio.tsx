@@ -40,6 +40,7 @@ import {
 interface LegacyMacroStudioProps {
   dataset: Dataset;
   onUpdateMacros: (updatedMacros: LegacyMacro[]) => void;
+  onUpdateDataset?: (updatedDataset: Dataset) => void;
 }
 
 interface DeleteTarget {
@@ -483,7 +484,8 @@ const VBE_CLASSES: VbeClassDef[] = [
 
 export const LegacyMacroStudio: React.FC<LegacyMacroStudioProps> = ({
   dataset,
-  onUpdateMacros
+  onUpdateMacros,
+  onUpdateDataset
 }) => {
   const [macros, setMacros] = useState<LegacyMacro[]>(dataset.legacyMacros);
   const [selectedMacroId, setSelectedMacroId] = useState<string>(
@@ -501,6 +503,11 @@ export const LegacyMacroStudio: React.FC<LegacyMacroStudioProps> = ({
   const [simulationReport, setSimulationReport] = useState<VbaSimulationReport | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [showTrace, setShowTrace] = useState(false);
+
+  // Multi-sheet replication state
+  const [selectedDiffSheet, setSelectedDiffSheet] = useState<string>('');
+  const [appliedChangesToWorkbook, setAppliedChangesToWorkbook] = useState<boolean>(false);
+  const [originalSheetsBackup, setOriginalSheetsBackup] = useState<any[] | null>(null);
 
   // VBE Immediate Window State (Ctrl+G)
   const [showImmediateWindow, setShowImmediateWindow] = useState(false);
@@ -997,19 +1004,58 @@ End Sub`;
   const handleRunSimulation = () => {
     if (!activeMacro) return;
     setIsSimulating(true);
+    setAppliedChangesToWorkbook(false);
     setTimeout(() => {
       const report = simulateVbaExecution(activeMacro.code, dataset);
       setSimulationReport(report);
       setIsSimulating(false);
+      if (report.affectedSheets && report.affectedSheets.length > 0) {
+        setSelectedDiffSheet(report.affectedSheets[0]);
+      } else if (dataset.sheets[0]) {
+        setSelectedDiffSheet(dataset.sheets[0].name);
+      }
       if (!report.success) {
         setShowTrace(true);
         showNotification(`Simulation detected ${report.errors.length} syntax/runtime fault(s) in "${activeMacro.name}".`);
+      } else if (report.isMultiSheet) {
+        showNotification(
+          `Multi-Sheet Simulation Verified: Mutated cells across ${report.affectedSheets?.length || 0} sheets!`
+        );
       } else if (report.warnings.length > 0) {
         showNotification(`Simulation verified with ${report.warnings.length} warning(s).`);
       } else {
         showNotification(`Simulation verified: 0 faults detected in "${activeMacro.name}".`);
       }
     }, 200);
+  };
+
+  // Commit simulated workbook mutations back to dataset
+  const handleApplySimulatedChanges = () => {
+    if (!simulationReport?.mutatedSheets || !onUpdateDataset) return;
+    if (!originalSheetsBackup) {
+      setOriginalSheetsBackup(JSON.parse(JSON.stringify(dataset.sheets)));
+    }
+    const updatedDataset: Dataset = {
+      ...dataset,
+      sheets: simulationReport.mutatedSheets
+    };
+    onUpdateDataset(updatedDataset);
+    setAppliedChangesToWorkbook(true);
+    showNotification(
+      `Applied simulated macro mutations across ${simulationReport.affectedSheets?.length || 1} sheet(s) to workbook!`
+    );
+  };
+
+  // Revert workbook to pre-simulation state
+  const handleRevertSimulatedChanges = () => {
+    if (!originalSheetsBackup || !onUpdateDataset) return;
+    const revertedDataset: Dataset = {
+      ...dataset,
+      sheets: originalSheetsBackup
+    };
+    onUpdateDataset(revertedDataset);
+    setAppliedChangesToWorkbook(false);
+    showNotification('Reverted workbook sheets to original state.');
   };
 
   // VBE Compile VBAProject action (Debug -> Compile VBAProject)
@@ -2190,6 +2236,175 @@ End Sub`;
                             ))}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Multi-Sheet Workbook Mutation & Replication Diff Matrix */}
+                    {simulationReport.success && simulationReport.sheetDiffs && (
+                      <div className="rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-950/20 via-slate-950/80 to-slate-900/60 p-4 space-y-4 shadow-lg">
+                        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-indigo-500/20">
+                          <div className="flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-cyan-400 shrink-0" />
+                            <div>
+                              <h4 className="text-xs font-semibold text-white flex items-center gap-2">
+                                <span>Multi-Sheet Workbook Mutation & Replication</span>
+                                {simulationReport.isMultiSheet ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-cyan-950 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
+                                    <ArrowRightLeft className="w-3 h-3 text-cyan-400" />
+                                    <span>Multi-Sheet Active ({simulationReport.affectedSheets?.length || 0} Mutated)</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-mono text-emerald-400 bg-emerald-950 border border-emerald-500/30">
+                                    Single-Sheet ({simulationReport.affectedSheets?.[0] || 'Target'})
+                                  </span>
+                                )}
+                              </h4>
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                Replicating macro execution state, cross-sheet data aggregation, and cell mutations across workbook sheets.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons to Apply/Revert */}
+                          {onUpdateDataset && simulationReport.mutatedSheets && (
+                            <div className="flex items-center gap-2">
+                              {!appliedChangesToWorkbook ? (
+                                <button
+                                  type="button"
+                                  onClick={handleApplySimulatedChanges}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold rounded-lg shadow-md transition-all active:scale-95"
+                                  title="Persist simulated mutations into the active workbook so all dashboard tabs reflect changes"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                  <span>Apply Changes to Workbook</span>
+                                </button>
+                              ) : (
+                                <div className="flex items-center gap-2 bg-emerald-950/80 border border-emerald-500/40 px-2.5 py-1 rounded-lg">
+                                  <span className="text-emerald-300 text-xs font-mono font-medium flex items-center gap-1">
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>Applied to Workbook</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={handleRevertSimulatedChanges}
+                                    className="px-2 py-0.5 text-[10px] font-mono bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition-colors"
+                                  >
+                                    Revert
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sheet Selection Tabs */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <span className="text-[11px] text-slate-400 font-mono">Inspect Sheet:</span>
+                          {Object.keys(simulationReport.sheetDiffs).map((sName) => {
+                            const diff = simulationReport.sheetDiffs![sName];
+                            const isSelected = selectedDiffSheet === sName || (!selectedDiffSheet && sName === simulationReport.affectedSheets?.[0]);
+                            const isAffected = diff.totalMutations > 0;
+                            return (
+                              <button
+                                key={sName}
+                                type="button"
+                                onClick={() => setSelectedDiffSheet(sName)}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-colors border ${
+                                  isSelected
+                                    ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm'
+                                    : isAffected
+                                    ? 'bg-slate-900 hover:bg-slate-800 text-indigo-300 border-indigo-500/30'
+                                    : 'bg-slate-950 hover:bg-slate-900 text-slate-400 border-slate-800'
+                                }`}
+                              >
+                                <span>{sName}</span>
+                                {isAffected ? (
+                                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-950/80 text-cyan-300 border border-indigo-500/40 font-bold">
+                                    {diff.totalMutations} mut
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-500">(clean)</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Selected Sheet Diff Details */}
+                        {(() => {
+                          const activeDiffName = selectedDiffSheet || simulationReport.affectedSheets?.[0] || Object.keys(simulationReport.sheetDiffs)[0];
+                          const activeDiff = activeDiffName ? simulationReport.sheetDiffs[activeDiffName] : null;
+
+                          if (!activeDiff || activeDiff.totalMutations === 0) {
+                            return (
+                              <div className="p-3 bg-slate-950/70 rounded-lg border border-slate-800 text-xs text-slate-400 font-mono">
+                                No mutations detected on sheet &quot;{activeDiffName}&quot;. (Read-only or unaffected during this macro execution).
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-2.5">
+                              {/* Quick Stats */}
+                              <div className="grid grid-cols-3 gap-2 text-xs font-mono">
+                                <div className="p-2 rounded bg-slate-950 border border-slate-800">
+                                  <span className="text-[10px] text-slate-500 block">Total Cell Mutations</span>
+                                  <span className="text-cyan-300 font-bold">{activeDiff.totalMutations} values updated</span>
+                                </div>
+                                <div className="p-2 rounded bg-slate-950 border border-slate-800">
+                                  <span className="text-[10px] text-slate-500 block">Rows Modified</span>
+                                  <span className="text-emerald-300 font-bold">{activeDiff.rowsAffected} rows affected</span>
+                                </div>
+                                <div className="p-2 rounded bg-slate-950 border border-slate-800">
+                                  <span className="text-[10px] text-slate-500 block">Columns Added</span>
+                                  <span className="text-slate-300 font-bold">
+                                    {activeDiff.columnsAdded && activeDiff.columnsAdded.length > 0
+                                      ? activeDiff.columnsAdded.join(', ')
+                                      : '0 added (in-place)'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Diff Table */}
+                              <div className="rounded-lg border border-slate-800 bg-slate-950 overflow-hidden">
+                                <div className="max-h-60 overflow-y-auto">
+                                  <table className="w-full text-left text-xs font-mono">
+                                    <thead className="bg-slate-900/90 text-slate-400 text-[10px] uppercase sticky top-0 border-b border-slate-800">
+                                      <tr>
+                                        <th className="py-1.5 px-3">Cell</th>
+                                        <th className="py-1.5 px-3">Row Index</th>
+                                        <th className="py-1.5 px-3">Column</th>
+                                        <th className="py-1.5 px-3 text-rose-400">Original Value</th>
+                                        <th className="py-1.5 px-3 text-emerald-400">Simulated Value</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800/60 text-[11px]">
+                                      {activeDiff.sampleChanges.map((change, cIdx) => (
+                                        <tr key={cIdx} className="hover:bg-slate-900/50 transition-colors">
+                                          <td className="py-1.5 px-3 font-bold text-indigo-300">{change.cell}</td>
+                                          <td className="py-1.5 px-3 text-slate-400">Row {change.rowIdx + 2}</td>
+                                          <td className="py-1.5 px-3 text-slate-200">{change.column}</td>
+                                          <td className="py-1.5 px-3 text-rose-400/80 line-through">
+                                            {typeof change.oldValue === 'number'
+                                              ? change.oldValue.toLocaleString()
+                                              : String(change.oldValue || '(blank)')}
+                                          </td>
+                                          <td className="py-1.5 px-3">
+                                            <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 font-semibold">
+                                              {typeof change.newValue === 'number'
+                                                ? change.newValue.toLocaleString()
+                                                : String(change.newValue)}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
 

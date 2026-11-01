@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Dataset } from '../types/dashboard';
+import { Dataset, SheetData } from '../types/dashboard';
 
 export interface VbaDiagnosticError {
   line: number;
@@ -13,6 +13,22 @@ export interface VbaDiagnosticError {
   message: string;
   suggestion?: string;
   lineSnippet?: string;
+}
+
+export interface CellChangeDiff {
+  cell: string;
+  rowIdx: number;
+  column: string;
+  oldValue: any;
+  newValue: any;
+}
+
+export interface SheetExecutionDiff {
+  sheetName: string;
+  rowsAffected: number;
+  totalMutations: number;
+  columnsAdded?: string[];
+  sampleChanges: CellChangeDiff[];
 }
 
 export interface VbaSimulationReport {
@@ -33,6 +49,11 @@ export interface VbaSimulationReport {
     params: string[];
   };
   summary: string;
+  // Multi-sheet workbook replication fields:
+  isMultiSheet?: boolean;
+  affectedSheets?: string[];
+  sheetDiffs?: Record<string, SheetExecutionDiff>;
+  mutatedSheets?: SheetData[];
 }
 
 interface BlockFrame {
@@ -400,6 +421,742 @@ function validateExpressionTokens(
       }
     }
   }
+}
+
+/**
+ * Column letter to 0-based column index converter (A -> 0, B -> 1, Z -> 25, AA -> 26).
+ */
+export function colLetterToIndex(colStr: string): number {
+  const num = parseInt(colStr, 10);
+  if (!isNaN(num) && String(num) === colStr.trim()) return Math.max(0, num - 1);
+  let idx = 0;
+  const s = colStr.trim().toUpperCase();
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code >= 65 && code <= 90) {
+      idx = idx * 26 + (code - 64);
+    }
+  }
+  return Math.max(0, idx - 1);
+}
+
+/**
+ * 0-based column index to Excel column letter (0 -> A, 1 -> B, 26 -> AA).
+ */
+export function indexToColLetter(index: number): string {
+  let letter = '';
+  let temp = index + 1;
+  while (temp > 0) {
+    const rem = (temp - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    temp = Math.floor((temp - 1) / 26);
+  }
+  return letter;
+}
+
+/**
+ * Resolves a worksheet reference from an identifier, expression, or ActiveSheet.
+ */
+function resolveVirtualSheet(
+  sheetRefStr: string,
+  sheetVars: Map<string, SheetData>,
+  virtualSheets: SheetData[],
+  activeSheet: SheetData
+): SheetData | null {
+  const clean = sheetRefStr.trim();
+  if (!clean || clean.toLowerCase() === 'activesheet') return activeSheet;
+
+  const lower = clean.toLowerCase();
+  if (sheetVars.has(lower)) return sheetVars.get(lower)!;
+
+  // Sheets("Name") or Worksheets("Name") or Sheets(1)
+  const matchNamed = clean.match(/^(?:ThisWorkbook\.)?(?:Sheets|Worksheets)\s*\(\s*(?:"([^"]+)"|(\d+))\s*\)$/i);
+  if (matchNamed) {
+    if (matchNamed[1]) {
+      const targetName = matchNamed[1].toLowerCase();
+      return virtualSheets.find((s) => s.name.toLowerCase() === targetName) || null;
+    }
+    if (matchNamed[2]) {
+      const idx = parseInt(matchNamed[2], 10) - 1;
+      return virtualSheets[idx] || null;
+    }
+  }
+
+  // Direct sheet name lookup
+  const found = virtualSheets.find((s) => s.name.toLowerCase() === lower);
+  if (found) return found;
+
+  return null;
+}
+
+/**
+ * Reads a cell value from a virtual SheetData given a 1-based row and column name/index.
+ */
+function getVirtualCellValue(sheet: SheetData, rowNum: number, colRef: any): any {
+  if (!sheet) return undefined;
+  let colName = '';
+
+  if (typeof colRef === 'number') {
+    const colIdx = colRef - 1;
+    colName = sheet.columns[colIdx] || '';
+  } else {
+    const str = String(colRef).trim().replace(/^"|"$/g, '');
+    const num = parseInt(str, 10);
+    if (!isNaN(num) && String(num) === str) {
+      colName = sheet.columns[num - 1] || '';
+    } else {
+      const found = sheet.columns.find((c) => c.toLowerCase() === str.toLowerCase());
+      if (found) {
+        colName = found;
+      } else if (/^[A-Za-z]+$/.test(str)) {
+        const colIdx = colLetterToIndex(str);
+        colName = sheet.columns[colIdx] || str;
+      } else {
+        colName = str;
+      }
+    }
+  }
+
+  if (rowNum === 1) return colName;
+  const rowIdx = rowNum - 2;
+  if (rowIdx >= 0 && rowIdx < sheet.rows.length) {
+    return sheet.rows[rowIdx][colName];
+  }
+  return undefined;
+}
+
+/**
+ * Mutates a cell value on a virtual SheetData, updates rows, records the diff, and logs.
+ */
+function setVirtualCellValue(
+  sheet: SheetData,
+  rowNum: number,
+  colRef: any,
+  rawVal: any,
+  diffTracker: Record<string, SheetExecutionDiff>,
+  executionTrace: string[]
+): void {
+  if (!sheet) return;
+  let colName = '';
+  let colIdx = 0;
+
+  if (typeof colRef === 'number') {
+    colIdx = colRef - 1;
+    if (!sheet.columns[colIdx]) {
+      colName = `Col_${colRef}`;
+      sheet.columns[colIdx] = colName;
+      if (!diffTracker[sheet.name].columnsAdded) diffTracker[sheet.name].columnsAdded = [];
+      diffTracker[sheet.name].columnsAdded!.push(colName);
+    } else {
+      colName = sheet.columns[colIdx];
+    }
+  } else {
+    const str = String(colRef).trim().replace(/^"|"$/g, '');
+    const num = parseInt(str, 10);
+    if (!isNaN(num) && String(num) === str) {
+      colIdx = num - 1;
+      colName = sheet.columns[colIdx] || `Col_${num}`;
+    } else {
+      const found = sheet.columns.find((c) => c.toLowerCase() === str.toLowerCase());
+      if (found) {
+        colName = found;
+        colIdx = sheet.columns.indexOf(found);
+      } else if (/^[A-Za-z]+$/.test(str)) {
+        colIdx = colLetterToIndex(str);
+        colName = sheet.columns[colIdx] || str;
+        if (!sheet.columns[colIdx]) {
+          sheet.columns[colIdx] = colName;
+        }
+      } else {
+        colName = str;
+        colIdx = sheet.columns.indexOf(colName);
+        if (colIdx === -1) {
+          sheet.columns.push(colName);
+          colIdx = sheet.columns.length - 1;
+          if (!diffTracker[sheet.name].columnsAdded) diffTracker[sheet.name].columnsAdded = [];
+          diffTracker[sheet.name].columnsAdded!.push(colName);
+        }
+      }
+    }
+  }
+
+  if (rowNum === 1) {
+    sheet.columns[colIdx] = String(rawVal);
+    return;
+  }
+
+  const rowIdx = rowNum - 2;
+  while (sheet.rows.length <= rowIdx) {
+    const emptyRow: Record<string, any> = {};
+    for (const c of sheet.columns) emptyRow[c] = '';
+    sheet.rows.push(emptyRow);
+  }
+
+  const oldValue = sheet.rows[rowIdx][colName];
+  let finalVal = rawVal;
+  if (typeof rawVal === 'string' && /^-?\d+(\.\d+)?$/.test(rawVal.trim())) {
+    finalVal = Number(rawVal.trim());
+  }
+
+  sheet.rows[rowIdx][colName] = finalVal;
+
+  const colLetter = indexToColLetter(colIdx);
+  const cellCoord = `${colLetter}${rowNum}`;
+  const diff = diffTracker[sheet.name];
+  diff.totalMutations++;
+  diff.sampleChanges.push({
+    cell: cellCoord,
+    rowIdx,
+    column: colName,
+    oldValue: oldValue !== undefined ? oldValue : '',
+    newValue: finalVal
+  });
+
+  executionTrace.push(
+    `[Cell Mutation] Sheet "${sheet.name}" Cell ${cellCoord} (${colName}): "${oldValue !== undefined ? oldValue : ''}" ➔ "${finalVal}".`
+  );
+}
+
+/**
+ * Safely evaluates a VBA runtime expression against virtual workbook state and local variables.
+ */
+function evalVirtualExpression(
+  rawExpr: string,
+  localVars: Map<string, any>,
+  sheetVars: Map<string, SheetData>,
+  virtualSheets: SheetData[],
+  activeSheet: SheetData,
+  readSheets: Set<string>
+): any {
+  let expr = rawExpr.trim();
+  if (!expr) return 0;
+
+  // 1. Literal numbers / booleans / strings
+  if (/^-?\d+(\.\d+)?$/.test(expr)) return Number(expr);
+  if (/^true$/i.test(expr)) return true;
+  if (/^false$/i.test(expr)) return false;
+  if (/^"[^"]*"$/.test(expr)) return expr.slice(1, -1);
+
+  // 2. Excel End(xlUp).Row expressions: e.g. ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+  const endUpMatch = expr.match(/(?:([a-zA-Z0-9_]+)|(?:ThisWorkbook\.)?(?:Sheets|Worksheets)\s*\(\s*(?:"([^"]+)"|(\d+))\s*\))\s*\.Cells\s*\([^)]+\)\.End\s*\(\s*xlUp\s*\)\.Row/i);
+  if (endUpMatch) {
+    const sRef = endUpMatch[1] || (endUpMatch[2] ? `Sheets("${endUpMatch[2]}")` : `Sheets(${endUpMatch[3]})`);
+    const sheet = resolveVirtualSheet(sRef, sheetVars, virtualSheets, activeSheet);
+    if (sheet) {
+      readSheets.add(sheet.name);
+      return sheet.rows.length + 1; // 1-based, data begins on row 2
+    }
+  }
+
+  // 3. Round(...) function
+  const roundMatch = expr.match(/^Round\s*\((.+),\s*(\d+)\)$/i);
+  if (roundMatch) {
+    const innerVal = evalVirtualExpression(roundMatch[1], localVars, sheetVars, virtualSheets, activeSheet, readSheets);
+    const decimals = parseInt(roundMatch[2], 10);
+    const factor = Math.pow(10, decimals);
+    return Math.round(Number(innerVal) * factor) / factor;
+  }
+
+  // 4. Abs(...) function
+  const absMatch = expr.match(/^Abs\s*\((.+)\)$/i);
+  if (absMatch) {
+    const innerVal = evalVirtualExpression(absMatch[1], localVars, sheetVars, virtualSheets, activeSheet, readSheets);
+    return Math.abs(Number(innerVal));
+  }
+
+  // 5. RGB(r, g, b)
+  const rgbMatch = expr.match(/^RGB\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (rgbMatch) {
+    return `rgb(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]})`;
+  }
+
+  // 6. Direct variable lookup if expression is an identifier
+  const lowerExpr = expr.toLowerCase();
+  if (localVars.has(lowerExpr)) {
+    return localVars.get(lowerExpr);
+  }
+
+  // 7. Cell access substitutions: [sheetRef.]Cells(r, c)[.Value] or [sheetRef.]Range("A1")[.Value]
+  const cellRegex = /(?:([a-zA-Z0-9_]+)|(?:ThisWorkbook\.)?(?:Sheets|Worksheets)\s*\(\s*(?:"([^"]+)"|(\d+))\s*\))?\s*\.\s*(?:Cells\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)|Range\s*\(\s*(?:"([^"]+)"|([a-zA-Z0-9_]+))\s*\))(?:\.(?:Value2|Value|Text))?/gi;
+  
+  let substituted = expr.replace(cellRegex, (_match, v1, sName, sIdx, rExpr, cExpr, rNamed, rVar) => {
+    let sheet: SheetData | null = null;
+    if (v1) sheet = resolveVirtualSheet(v1, sheetVars, virtualSheets, activeSheet);
+    else if (sName) sheet = resolveVirtualSheet(`Sheets("${sName}")`, sheetVars, virtualSheets, activeSheet);
+    else if (sIdx) sheet = resolveVirtualSheet(`Sheets(${sIdx})`, sheetVars, virtualSheets, activeSheet);
+    else sheet = activeSheet;
+
+    if (!sheet) return '0';
+    readSheets.add(sheet.name);
+
+    if (rExpr && cExpr) {
+      const rowVal = evalVirtualExpression(rExpr, localVars, sheetVars, virtualSheets, activeSheet, readSheets);
+      const colVal = evalVirtualExpression(cExpr, localVars, sheetVars, virtualSheets, activeSheet, readSheets);
+      const cellVal = getVirtualCellValue(sheet, Number(rowVal), colVal);
+      if (typeof cellVal === 'string') return JSON.stringify(cellVal);
+      if (cellVal === undefined || cellVal === null || cellVal === '') return '0';
+      return String(cellVal);
+    }
+
+    if (rNamed || rVar) {
+      const rangeStr = rNamed || (localVars.get(rVar?.toLowerCase()) ?? rVar);
+      const cellMatch = String(rangeStr).match(/^([A-Za-z]+)(\d+)$/);
+      if (cellMatch) {
+        const cLetter = cellMatch[1];
+        const rNum = parseInt(cellMatch[2], 10);
+        const cellVal = getVirtualCellValue(sheet, rNum, cLetter);
+        if (typeof cellVal === 'string') return JSON.stringify(cellVal);
+        if (cellVal === undefined || cellVal === null || cellVal === '') return '0';
+        return String(cellVal);
+      }
+    }
+
+    return '0';
+  });
+
+  // 8. Substitute local variables with their values
+  for (const [varName, val] of localVars.entries()) {
+    const varRegex = new RegExp(`\\b${varName}\\b`, 'gi');
+    if (typeof val === 'string') {
+      substituted = substituted.replace(varRegex, JSON.stringify(val));
+    } else {
+      substituted = substituted.replace(varRegex, String(val ?? 0));
+    }
+  }
+
+  // 9. VBA string concatenation (&)
+  substituted = substituted.replace(/\s+&\s+/g, ' + ');
+
+  // 10. VBA equality and comparison translations for condition evaluation
+  const compString = substituted
+    .replace(/\bAnd\b/gi, ' && ')
+    .replace(/\bOr\b/gi, ' || ')
+    .replace(/\bNot\b/gi, ' ! ')
+    .replace(/<>/g, ' !== ')
+    .replace(/\s*=\s*/g, ' === ');
+
+  // 11. Safe arithmetic/boolean evaluation
+  try {
+    const sanitized = compString.replace(/\^/g, '**');
+    // eslint-disable-next-line no-eval
+    return Function(`"use strict"; return (${sanitized})`)();
+  } catch {
+    if (/^".*"$/.test(expr)) return expr.slice(1, -1);
+    return expr;
+  }
+}
+
+/**
+ * Simulates VBA macro execution across multiple worksheets in a virtual workbook.
+ */
+export function executeVirtualWorkbookSimulation(
+  vbaCode: string,
+  sheets: SheetData[],
+  activeSheetName: string,
+  executionTrace: string[]
+): {
+  mutatedSheets: SheetData[];
+  affectedSheets: string[];
+  sheetDiffs: Record<string, SheetExecutionDiff>;
+  isMultiSheet: boolean;
+  totalMutations: number;
+} {
+  const virtualSheets: SheetData[] = JSON.parse(JSON.stringify(sheets));
+  const diffTracker: Record<string, SheetExecutionDiff> = {};
+  for (const s of virtualSheets) {
+    diffTracker[s.name] = {
+      sheetName: s.name,
+      rowsAffected: 0,
+      totalMutations: 0,
+      columnsAdded: [],
+      sampleChanges: []
+    };
+  }
+
+  const sheetVars = new Map<string, SheetData>();
+  const currentActiveSheet =
+    virtualSheets.find((s) => s.name.toLowerCase() === activeSheetName.toLowerCase()) || virtualSheets[0];
+  sheetVars.set('activesheet', currentActiveSheet);
+
+  const localVars = new Map<string, any>();
+  const readSheets = new Set<string>();
+
+  executionTrace.push(`[Virtual Workbook Engine] Initializing execution context with ${virtualSheets.length} sheet(s).`);
+
+  // Strip comments and normalize lines
+  const lines: string[] = [];
+  for (const raw of vbaCode.split(/\r?\n/)) {
+    const { codePart } = stripVbaComment(raw);
+    const trimmed = codePart.trim();
+    if (trimmed) lines.push(trimmed);
+  }
+
+  interface AstStmt {
+    raw: string;
+    type: 'dim' | 'set_ws' | 'assign_cell' | 'assign_range' | 'assign_format' | 'assign_var' | 'for_loop' | 'for_each_sheet' | 'if_block' | 'other';
+    loopVar?: string;
+    startExpr?: string;
+    endExpr?: string;
+    condExpr?: string;
+    innerStmts?: AstStmt[];
+    elseStmts?: AstStmt[];
+    varName?: string;
+    sheetRef?: string;
+    rowExpr?: string;
+    colExpr?: string;
+    valExpr?: string;
+    rangeExpr?: string;
+    colorExpr?: string;
+  }
+
+  function parseAstStatements(rawStmts: string[]): AstStmt[] {
+    const result: AstStmt[] = [];
+    let idx = 0;
+
+    while (idx < rawStmts.length) {
+      const stmt = rawStmts[idx].trim();
+      idx++;
+
+      if (/^(?:(?:Public|Private|Friend)\s+)?(?:Sub|Function|Property)\b/i.test(stmt) || /^End\s+(?:Sub|Function|Property)\b/i.test(stmt)) {
+        continue;
+      }
+
+      // Check For Each ws In Worksheets / Sheets
+      const forEachMatch = stmt.match(/^For\s+Each\s+([A-Za-z0-9_]+)\s+In\s+(?:ThisWorkbook\.)?(Worksheets|Sheets)/i);
+      if (forEachMatch) {
+        const loopVar = forEachMatch[1];
+        const inner: string[] = [];
+        let depth = 1;
+        while (idx < rawStmts.length && depth > 0) {
+          const innerStmt = rawStmts[idx].trim();
+          idx++;
+          if (/^For\s+(?:Each\b|[A-Za-z0-9_]+\s*=)/i.test(innerStmt)) depth++;
+          else if (/^Next\b/i.test(innerStmt)) {
+            depth--;
+            if (depth === 0) break;
+          }
+          inner.push(innerStmt);
+        }
+        result.push({
+          raw: stmt,
+          type: 'for_each_sheet',
+          loopVar,
+          innerStmts: parseAstStatements(inner)
+        });
+        continue;
+      }
+
+      // Check For <var> = <start> To <end> [Step <step>]
+      const forMatch = stmt.match(/^For\s+([A-Za-z0-9_]+)\s*=\s*(.+?)\s+To\s+(.+)$/i);
+      if (forMatch) {
+        const loopVar = forMatch[1];
+        const startExpr = forMatch[2].trim();
+        const endExpr = forMatch[3].trim();
+        const inner: string[] = [];
+        let depth = 1;
+        while (idx < rawStmts.length && depth > 0) {
+          const innerStmt = rawStmts[idx].trim();
+          idx++;
+          if (/^For\s+(?:Each\b|[A-Za-z0-9_]+\s*=)/i.test(innerStmt)) depth++;
+          else if (/^Next\b/i.test(innerStmt)) {
+            depth--;
+            if (depth === 0) break;
+          }
+          inner.push(innerStmt);
+        }
+        result.push({
+          raw: stmt,
+          type: 'for_loop',
+          loopVar,
+          startExpr,
+          endExpr,
+          innerStmts: parseAstStatements(inner)
+        });
+        continue;
+      }
+
+      // Check If statement
+      if (/^If\b/i.test(stmt)) {
+        const thenIdx = stmt.search(/\bThen\b/i);
+        if (thenIdx !== -1) {
+          const condExpr = stmt.slice(2, thenIdx).trim();
+          const afterThen = stmt.slice(thenIdx + 4).trim();
+          if (afterThen) {
+            result.push({
+              raw: stmt,
+              type: 'if_block',
+              condExpr,
+              innerStmts: parseAstStatements([afterThen])
+            });
+            continue;
+          } else {
+            const thenStmts: string[] = [];
+            const elseStmts: string[] = [];
+            let inElse = false;
+            let ifDepth = 1;
+
+            while (idx < rawStmts.length && ifDepth > 0) {
+              const innerStmt = rawStmts[idx].trim();
+              idx++;
+              if (/^If\b/i.test(innerStmt) && !/\bThen\s+.+$/i.test(innerStmt)) {
+                ifDepth++;
+              } else if (/^End\s+If\b/i.test(innerStmt)) {
+                ifDepth--;
+                if (ifDepth === 0) break;
+              } else if (ifDepth === 1 && /^Else\b/i.test(innerStmt)) {
+                inElse = true;
+                continue;
+              }
+
+              if (inElse) elseStmts.push(innerStmt);
+              else thenStmts.push(innerStmt);
+            }
+
+            result.push({
+              raw: stmt,
+              type: 'if_block',
+              condExpr,
+              innerStmts: parseAstStatements(thenStmts),
+              elseStmts: parseAstStatements(elseStmts)
+            });
+            continue;
+          }
+        }
+      }
+
+      // Check Set ws = Sheets(...)
+      const setWsMatch = stmt.match(/^Set\s+([A-Za-z0-9_]+)\s*=\s*(.+)$/i);
+      if (setWsMatch) {
+        result.push({
+          raw: stmt,
+          type: 'set_ws',
+          varName: setWsMatch[1],
+          valExpr: setWsMatch[2].trim()
+        });
+        continue;
+      }
+
+      // Check Dim
+      if (/^(?:Dim|Static)\s+/i.test(stmt)) {
+        result.push({
+          raw: stmt,
+          type: 'dim'
+        });
+        continue;
+      }
+
+      // Check cell interior color: ws.Cells(r, c).Interior.Color = ...
+      const colorMatch = stmt.match(/^(?:([A-Za-z0-9_]+)|(?:ThisWorkbook\.)?(?:Sheets|Worksheets)\s*\(\s*(?:"([^"]+)"|(\d+))\s*\))?\s*\.\s*Cells\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)\.Interior\.Color\s*=\s*(.+)$/i);
+      if (colorMatch) {
+        const sRef = colorMatch[1] || (colorMatch[2] ? `Sheets("${colorMatch[2]}")` : colorMatch[3] ? `Sheets(${colorMatch[3]})` : 'activesheet');
+        result.push({
+          raw: stmt,
+          type: 'assign_format',
+          sheetRef: sRef,
+          rowExpr: colorMatch[4],
+          colExpr: colorMatch[5],
+          colorExpr: colorMatch[6]
+        });
+        continue;
+      }
+
+      // Check cell assignment: [ws.]Cells(r, c)[.Value] = ...
+      const cellAssignMatch = stmt.match(/^(?:([A-Za-z0-9_]+)|(?:ThisWorkbook\.)?(?:Sheets|Worksheets)\s*\(\s*(?:"([^"]+)"|(\d+))\s*\))?\s*\.\s*Cells\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)(?:\.(?:Value2|Value|Text|Formula))?\s*=\s*(.+)$/i);
+      if (cellAssignMatch) {
+        const sRef = cellAssignMatch[1] || (cellAssignMatch[2] ? `Sheets("${cellAssignMatch[2]}")` : cellAssignMatch[3] ? `Sheets(${cellAssignMatch[3]})` : 'activesheet');
+        result.push({
+          raw: stmt,
+          type: 'assign_cell',
+          sheetRef: sRef,
+          rowExpr: cellAssignMatch[4],
+          colExpr: cellAssignMatch[5],
+          valExpr: cellAssignMatch[6]
+        });
+        continue;
+      }
+
+      // Check range assignment: [ws.]Range("A1")[.Value] = ...
+      const rangeAssignMatch = stmt.match(/^(?:([A-Za-z0-9_]+)|(?:ThisWorkbook\.)?(?:Sheets|Worksheets)\s*\(\s*(?:"([^"]+)"|(\d+))\s*\))?\s*\.\s*Range\s*\(\s*([^)]+)\s*\)(?:\.(?:Value2|Value|Text|Formula))?\s*=\s*(.+)$/i);
+      if (rangeAssignMatch) {
+        const sRef = rangeAssignMatch[1] || (rangeAssignMatch[2] ? `Sheets("${rangeAssignMatch[2]}")` : rangeAssignMatch[3] ? `Sheets(${rangeAssignMatch[3]})` : 'activesheet');
+        result.push({
+          raw: stmt,
+          type: 'assign_range',
+          sheetRef: sRef,
+          rangeExpr: rangeAssignMatch[4],
+          valExpr: rangeAssignMatch[5]
+        });
+        continue;
+      }
+
+      // Check local variable assignment: var = expr
+      if (stmt.includes('=')) {
+        const eqIdx = stmt.indexOf('=');
+        const lhs = stmt.slice(0, eqIdx).trim();
+        const rhs = stmt.slice(eqIdx + 1).trim();
+        if (/^[A-Za-z0-9_]+$/.test(lhs)) {
+          result.push({
+            raw: stmt,
+            type: 'assign_var',
+            varName: lhs,
+            valExpr: rhs
+          });
+          continue;
+        }
+      }
+
+      result.push({ raw: stmt, type: 'other' });
+    }
+    return result;
+  }
+
+  function executeAst(astList: AstStmt[], maxIterationsLimit: { count: number }) {
+    for (const node of astList) {
+      if (maxIterationsLimit.count <= 0) break;
+      maxIterationsLimit.count--;
+
+      if (node.type === 'set_ws') {
+        const sheet = resolveVirtualSheet(node.valExpr || '', sheetVars, virtualSheets, currentActiveSheet);
+        if (sheet) {
+          sheetVars.set(node.varName!.toLowerCase(), sheet);
+          readSheets.add(sheet.name);
+          executionTrace.push(
+            `[Virtual VBE] Bound '${node.varName}' -> Worksheet "${sheet.name}" (${sheet.rows.length} rows, ${sheet.columns.length} columns).`
+          );
+        }
+        continue;
+      }
+
+      if (node.type === 'assign_var') {
+        const val = evalVirtualExpression(node.valExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+        localVars.set(node.varName!.toLowerCase(), val);
+        continue;
+      }
+
+      if (node.type === 'assign_cell') {
+        const targetSheet = resolveVirtualSheet(node.sheetRef || '', sheetVars, virtualSheets, currentActiveSheet);
+        if (targetSheet) {
+          const rowVal = evalVirtualExpression(node.rowExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+          const colVal = evalVirtualExpression(node.colExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+          const cellVal = evalVirtualExpression(node.valExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+          setVirtualCellValue(targetSheet, Number(rowVal), colVal, cellVal, diffTracker, executionTrace);
+        }
+        continue;
+      }
+
+      if (node.type === 'assign_range') {
+        const targetSheet = resolveVirtualSheet(node.sheetRef || '', sheetVars, virtualSheets, currentActiveSheet);
+        if (targetSheet) {
+          const rangeStr = String(evalVirtualExpression(node.rangeExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets));
+          const match = rangeStr.replace(/^"|"$/g, '').match(/^([A-Za-z]+)(\d+)$/);
+          if (match) {
+            const colLetter = match[1];
+            const rowNum = parseInt(match[2], 10);
+            const cellVal = evalVirtualExpression(node.valExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+            setVirtualCellValue(targetSheet, rowNum, colLetter, cellVal, diffTracker, executionTrace);
+          }
+        }
+        continue;
+      }
+
+      if (node.type === 'assign_format') {
+        const targetSheet = resolveVirtualSheet(node.sheetRef || '', sheetVars, virtualSheets, currentActiveSheet);
+        if (targetSheet) {
+          const rowVal = evalVirtualExpression(node.rowExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+          const colVal = evalVirtualExpression(node.colExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+          const colorVal = evalVirtualExpression(node.colorExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+          const colLetter = typeof colVal === 'number' ? indexToColLetter(colVal - 1) : String(colVal);
+          executionTrace.push(
+            `[Format Mutation] Sheet "${targetSheet.name}" Cell ${colLetter}${rowVal}: Set Interior.Color = "${colorVal}".`
+          );
+        }
+        continue;
+      }
+
+      if (node.type === 'if_block') {
+        const cond = evalVirtualExpression(node.condExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+        if (Boolean(cond)) {
+          if (node.innerStmts) executeAst(node.innerStmts, maxIterationsLimit);
+        } else if (node.elseStmts) {
+          executeAst(node.elseStmts, maxIterationsLimit);
+        }
+        continue;
+      }
+
+      if (node.type === 'for_loop') {
+        const startVal = Number(evalVirtualExpression(node.startExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets));
+        const endVal = Number(evalVirtualExpression(node.endExpr || '', localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets));
+        const step = 1;
+        const vName = node.loopVar!.toLowerCase();
+
+        let iters = 0;
+        for (let i = startVal; i <= endVal && iters < 500; i += step, iters++) {
+          localVars.set(vName, i);
+          if (node.innerStmts) executeAst(node.innerStmts, maxIterationsLimit);
+        }
+        continue;
+      }
+
+      if (node.type === 'for_each_sheet') {
+        const vName = node.loopVar!.toLowerCase();
+        for (const ws of virtualSheets) {
+          sheetVars.set(vName, ws);
+          readSheets.add(ws.name);
+          if (node.innerStmts) executeAst(node.innerStmts, maxIterationsLimit);
+        }
+        continue;
+      }
+
+      if (/^Application\.StatusBar\s*=/i.test(node.raw)) {
+        const statusExpr = node.raw.replace(/^Application\.StatusBar\s*=\s*/i, '');
+        const statusVal = evalVirtualExpression(statusExpr, localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+        executionTrace.push(`[Application.StatusBar] "${statusVal}".`);
+        continue;
+      }
+
+      if (/^MsgBox\b/i.test(node.raw)) {
+        const msgExpr = node.raw.replace(/^MsgBox\s*/i, '').split(',')[0];
+        const msgVal = evalVirtualExpression(msgExpr, localVars, sheetVars, virtualSheets, currentActiveSheet, readSheets);
+        executionTrace.push(`[VBA MsgBox] Displayed alert dialog: "${msgVal}".`);
+        continue;
+      }
+    }
+  }
+
+  const ast = parseAstStatements(lines);
+  executeAst(ast, { count: 10000 });
+
+  const affectedSheets: string[] = [];
+  let totalMutations = 0;
+
+  for (const sName of Object.keys(diffTracker)) {
+    const diff = diffTracker[sName];
+    if (diff.totalMutations > 0) {
+      affectedSheets.push(sName);
+      totalMutations += diff.totalMutations;
+      const uniqueRows = new Set(diff.sampleChanges.map((c) => c.rowIdx));
+      diff.rowsAffected = uniqueRows.size;
+    }
+  }
+
+  const isMultiSheet =
+    affectedSheets.length > 1 ||
+    (affectedSheets.length >= 1 && readSheets.size >= 1 && !readSheets.has(affectedSheets[0])) ||
+    (readSheets.size > 1 && (totalMutations > 0 || affectedSheets.length > 0));
+
+  if (isMultiSheet) {
+    executionTrace.push(
+      `[Multi-Sheet Verification] Executed macro across ${affectedSheets.length} modified sheet(s) (${affectedSheets.join(', ') || 'None'}) with ${readSheets.size} workbook sheet(s) referenced (${Array.from(readSheets).join(', ')}). Total cell mutations: ${totalMutations}.`
+    );
+  }
+
+  return {
+    mutatedSheets: virtualSheets,
+    affectedSheets,
+    sheetDiffs: diffTracker,
+    isMultiSheet,
+    totalMutations
+  };
 }
 
 /**
@@ -1520,15 +2277,42 @@ export function simulateVbaExecution(vbaCode: string, dataset?: Dataset): VbaSim
   const executionTimeMs = Math.round((performance.now() - startTime) * 10) / 10;
   const isSuccess = errors.length === 0;
 
+  let multiSheetResult: {
+    mutatedSheets: SheetData[];
+    affectedSheets: string[];
+    sheetDiffs: Record<string, SheetExecutionDiff>;
+    isMultiSheet: boolean;
+    totalMutations: number;
+  } | undefined;
+
+  if (isSuccess && dataset?.sheets && dataset.sheets.length > 0) {
+    multiSheetResult = executeVirtualWorkbookSimulation(
+      vbaCode,
+      dataset.sheets,
+      activeSheetName,
+      executionTrace
+    );
+  }
+
   if (isSuccess) {
     executionTrace.push(`[Execution Simulation] Mock execution completed successfully in ${executionTimeMs}ms with zero syntax or runtime faults.`);
   } else {
     executionTrace.push(`❌ [Simulation Blocked] Execution halted with ${errors.length} fatal error(s) and ${warnings.length} warning(s).`);
   }
 
-  const summary = isSuccess
+  let summary = isSuccess
     ? `Simulation Verified: Executed "${procedureInfo?.name || 'Procedure'}" in ${executionTimeMs}ms across ${totalLines} lines with 0 faults.`
     : `Simulation Failed: Detected ${errors.length} error(s) and ${warnings.length} warning(s) in VBA code.`;
+
+  if (isSuccess && multiSheetResult && multiSheetResult.totalMutations > 0) {
+    if (multiSheetResult.isMultiSheet) {
+      summary = `Multi-Sheet Simulation Succeeded: Mutated ${multiSheetResult.totalMutations} cell(s) across ${multiSheetResult.affectedSheets.length} sheet(s) (${multiSheetResult.affectedSheets.join(', ')}).`;
+    } else if (multiSheetResult.affectedSheets.length === 1) {
+      const shName = multiSheetResult.affectedSheets[0];
+      const diff = multiSheetResult.sheetDiffs[shName];
+      summary = `Simulation Succeeded: Mutated ${diff.totalMutations} cell(s) across ${diff.rowsAffected} row(s) in "${shName}".`;
+    }
+  }
 
   return {
     success: isSuccess,
@@ -1542,7 +2326,11 @@ export function simulateVbaExecution(vbaCode: string, dataset?: Dataset): VbaSim
     referencedSheets,
     variablesDetected,
     procedureSignature: procedureInfo,
-    summary
+    summary,
+    isMultiSheet: multiSheetResult?.isMultiSheet || false,
+    affectedSheets: multiSheetResult?.affectedSheets || [],
+    sheetDiffs: multiSheetResult?.sheetDiffs,
+    mutatedSheets: multiSheetResult?.mutatedSheets
   };
 }
 
