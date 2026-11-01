@@ -1,0 +1,6 @@
+{
+  "name": "XLSM Cloud Studio - Modern Spreadsheet Dashboard & Insights",
+  "description": "Transform legacy XLSM Excel workbooks into modern, real-time web dashboards with VBA macro engineering, interactive charts, dynamic pivot matrices, and secure spreadsheet processing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
