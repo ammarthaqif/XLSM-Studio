@@ -957,6 +957,7 @@ export default function App() {
             dataset={dataset}
             onUpdateMacros={handleUpdateMacros}
             onUpdateDataset={handleUpdateDataset}
+            onNavigateToDashboard={() => setActiveTab('dashboard')}
           />
         )}
       </main>

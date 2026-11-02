@@ -36,11 +36,13 @@ import {
   Send,
   Sliders
 } from 'lucide-react';
+import { MacroRunnerPanel } from './MacroRunnerPanel';
 
 interface LegacyMacroStudioProps {
   dataset: Dataset;
   onUpdateMacros: (updatedMacros: LegacyMacro[]) => void;
   onUpdateDataset?: (updatedDataset: Dataset) => void;
+  onNavigateToDashboard?: () => void;
 }
 
 interface DeleteTarget {
@@ -485,13 +487,14 @@ const VBE_CLASSES: VbeClassDef[] = [
 export const LegacyMacroStudio: React.FC<LegacyMacroStudioProps> = ({
   dataset,
   onUpdateMacros,
-  onUpdateDataset
+  onUpdateDataset,
+  onNavigateToDashboard
 }) => {
   const [macros, setMacros] = useState<LegacyMacro[]>(dataset.legacyMacros);
   const [selectedMacroId, setSelectedMacroId] = useState<string>(
     dataset.legacyMacros[0]?.id || ''
   );
-  const [activeViewTab, setActiveViewTab] = useState<'editor' | 'diff'>('editor');
+  const [activeViewTab, setActiveViewTab] = useState<'editor' | 'runner' | 'diff'>('editor');
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
     standard: true,
     document: true,
@@ -1579,17 +1582,32 @@ End Sub`;
                     onClick={() => setActiveViewTab('editor')}
                     className={`px-3 py-1 rounded font-medium transition-colors ${
                       activeViewTab === 'editor'
-                        ? 'bg-slate-800 text-white'
+                        ? 'bg-slate-800 text-white font-semibold shadow-xs'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     Code Editor
                   </button>
                   <button
+                    onClick={() => setActiveViewTab('runner')}
+                    className={`px-3 py-1 rounded font-medium transition-colors flex items-center gap-1.5 ${
+                      activeViewTab === 'runner'
+                        ? 'bg-indigo-600 text-white font-semibold shadow-sm'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                    }`}
+                    title="Execute simulated VBA operations directly on browser-side data and preview chart changes"
+                  >
+                    <Play className="w-3 h-3 text-emerald-400 fill-current" />
+                    <span>Macro Runner</span>
+                    <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Live
+                    </span>
+                  </button>
+                  <button
                     onClick={() => setActiveViewTab('diff')}
                     className={`px-3 py-1 rounded font-medium transition-colors flex items-center gap-1 ${
                       activeViewTab === 'diff'
-                        ? 'bg-slate-800 text-white'
+                        ? 'bg-slate-800 text-white font-semibold shadow-xs'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -1733,6 +1751,20 @@ End Sub`;
 
                   <button
                     type="button"
+                    onClick={() => setActiveViewTab('runner')}
+                    title="Open Macro Runner Panel to execute operations and preview chart impact"
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded border transition-colors ${
+                      activeViewTab === 'runner'
+                        ? 'bg-indigo-600 text-white font-semibold border-indigo-500 shadow-sm'
+                        : 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border-emerald-500/40'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Macro Runner Panel</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleRunSimulation}
                     disabled={isSimulating}
                     title="Run Sub / UserForm (F5)"
@@ -1810,8 +1842,17 @@ End Sub`;
                 </div>
               )}
 
-              {/* Editor Body */}
-              {activeViewTab === 'editor' ? (
+              {/* Panel Content based on activeViewTab */}
+              {activeViewTab === 'runner' ? (
+                <MacroRunnerPanel
+                  dataset={dataset}
+                  activeMacro={activeMacro}
+                  macros={macros}
+                  onUpdateDataset={onUpdateDataset || (() => {})}
+                  onNavigateToDashboard={onNavigateToDashboard}
+                  onNotification={showNotification}
+                />
+              ) : activeViewTab === 'editor' ? (
                 <div className="rounded-lg border border-slate-800 bg-slate-950 overflow-hidden shadow-inner">
                   <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/90 border-b border-slate-800 text-[11px] font-mono text-slate-400">
                     <div className="flex items-center gap-2">
