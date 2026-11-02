@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ReportingWidget, Dataset } from '../../types/dashboard';
 import { Trash2, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 interface MetricCardProps {
   widget: ReportingWidget;
@@ -21,6 +22,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   canMoveLeft,
   canMoveRight
 }) => {
+  const { isLight } = useTheme();
   const [isHovered, setIsHovered] = useState(false);
   const sheet = dataset.sheets.find((s) => s.name === widget.sheetName) || dataset.sheets[0];
 
@@ -81,14 +83,27 @@ export const MetricCard: React.FC<MetricCardProps> = ({
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="relative rounded-xl border border-slate-800 bg-slate-900/90 p-5 shadow-sm transition-all hover:border-slate-700"
+      className={`relative rounded-xl border p-5 shadow-sm transition-all ${
+        isLight
+          ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-900 shadow-slate-100'
+          : 'bg-slate-900/90 border-slate-800 hover:border-slate-700 text-white'
+      }`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-slate-600 hover:text-slate-400 cursor-grab active:cursor-grabbing p-0.5" title="Drag to reorder metric card">
+          <span
+            className={`cursor-grab active:cursor-grabbing p-0.5 ${
+              isLight ? 'text-slate-400 hover:text-slate-600' : 'text-slate-600 hover:text-slate-400'
+            }`}
+            title="Drag to reorder metric card"
+          >
             <GripVertical className="w-3.5 h-3.5" />
           </span>
-          <span className="text-xs font-medium tracking-wide text-slate-400 uppercase truncate">
+          <span
+            className={`text-xs font-semibold tracking-wide uppercase truncate ${
+              isLight ? 'text-slate-600' : 'text-slate-400'
+            }`}
+          >
             {widget.title}
           </span>
         </div>
@@ -97,7 +112,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             <button
               onClick={onMoveLeft}
               title="Move left in layout"
-              className="p-1 rounded text-slate-500 hover:text-indigo-300 hover:bg-slate-800 transition-colors"
+              className={`p-1 rounded transition-colors ${
+                isLight
+                  ? 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
+                  : 'text-slate-500 hover:text-indigo-300 hover:bg-slate-800'
+              }`}
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
@@ -106,7 +125,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             <button
               onClick={onMoveRight}
               title="Move right in layout"
-              className="p-1 rounded text-slate-500 hover:text-indigo-300 hover:bg-slate-800 transition-colors"
+              className={`p-1 rounded transition-colors ${
+                isLight
+                  ? 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
+                  : 'text-slate-500 hover:text-indigo-300 hover:bg-slate-800'
+              }`}
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
@@ -115,7 +138,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             <button
               onClick={() => onDeleteWidget(widget.id)}
               title="Remove Widget"
-              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+              className={`p-1 rounded transition-colors ${
+                isLight
+                  ? 'text-slate-400 hover:text-rose-600 hover:bg-slate-100'
+                  : 'text-slate-500 hover:text-rose-400 hover:bg-slate-800'
+              }`}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
@@ -124,22 +151,42 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       </div>
 
       <div className="mt-3 flex items-baseline justify-between gap-4">
-        <div className="text-2xl lg:text-3xl font-bold tracking-tight text-white font-mono tabular-nums">
+        <div
+          className={`text-2xl lg:text-3xl font-bold tracking-tight font-mono tabular-nums ${
+            isLight ? 'text-slate-900' : 'text-white'
+          }`}
+        >
           {formattedDisplay}
         </div>
-        <div className="flex items-center gap-1 text-xs font-mono font-medium text-emerald-400">
+        <div
+          className={`flex items-center gap-1 text-xs font-mono font-medium ${
+            isLight ? 'text-emerald-700' : 'text-emerald-400'
+          }`}
+        >
           <span>{deltaPct}</span>
-          <span className="text-slate-500 text-[11px] font-sans">vs prior</span>
+          <span className={`text-[11px] font-sans ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
+            vs prior
+          </span>
         </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+      <div
+        className={`mt-2 flex items-center justify-between text-xs ${
+          isLight ? 'text-slate-500' : 'text-slate-500'
+        }`}
+      >
         <div className="flex items-center gap-1.5">
-          <span>{widget.sheetName}</span>
+          <span className="font-medium">{widget.sheetName}</span>
           <span>·</span>
           <span>{widget.aggregation.toUpperCase()}({widget.yAxis})</span>
         </div>
-        <span className="font-mono text-[11px] text-slate-600">{values.length} records</span>
+        <span
+          className={`font-mono text-[11px] ${
+            isLight ? 'text-slate-500' : 'text-slate-600'
+          }`}
+        >
+          {values.length} records
+        </span>
       </div>
     </div>
   );

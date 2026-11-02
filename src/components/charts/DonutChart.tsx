@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ReportingWidget, Dataset, WidgetWidth } from '../../types/dashboard';
 import { Trash2, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 interface DonutChartProps {
   widget: ReportingWidget;
@@ -25,6 +26,7 @@ export const DonutChart: React.FC<DonutChartProps> = ({
   canMoveRight,
   onChangeWidth
 }) => {
+  const { isLight } = useTheme();
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const sheet = dataset.sheets.find((s) => s.name === widget.sheetName) || dataset.sheets[0];
 
@@ -76,15 +78,34 @@ export const DonutChart: React.FC<DonutChartProps> = ({
   };
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-5 shadow-sm transition-all hover:border-slate-700">
+    <div
+      className={`rounded-xl border p-5 shadow-sm transition-all ${
+        isLight
+          ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-900 shadow-slate-100'
+          : 'border-slate-800 bg-slate-900/90 hover:border-slate-700 text-white'
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-slate-600 hover:text-slate-400 cursor-grab active:cursor-grabbing p-0.5" title="Drag to reorder chart in layout">
+          <span
+            className={`cursor-grab active:cursor-grabbing p-0.5 ${
+              isLight ? 'text-slate-400 hover:text-slate-600' : 'text-slate-600 hover:text-slate-400'
+            }`}
+            title="Drag to reorder chart in layout"
+          >
             <GripVertical className="w-4 h-4" />
           </span>
           <div>
-            <h4 className="text-sm font-semibold tracking-tight text-white truncate">{widget.title}</h4>
-            <p className="text-xs text-slate-400 mt-0.5">Share by {widget.xAxis}</p>
+            <h4
+              className={`text-sm font-semibold tracking-tight truncate ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}
+            >
+              {widget.title}
+            </h4>
+            <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+              Share by <span className={isLight ? 'text-slate-700 font-medium' : 'text-slate-300'}>{widget.xAxis}</span>
+            </p>
           </div>
         </div>
 
@@ -94,7 +115,11 @@ export const DonutChart: React.FC<DonutChartProps> = ({
             <select
               value={widget.width}
               onChange={(e) => onChangeWidth(e.target.value as WidgetWidth)}
-              className="bg-slate-800/90 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500"
+              className={`border rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:border-indigo-500 ${
+                isLight
+                  ? 'bg-slate-50 border-slate-300 text-slate-700'
+                  : 'bg-slate-800/90 border-slate-700 text-slate-300'
+              }`}
               title="Adjust widget layout width"
             >
               <option value="1/3">1/3 Width</option>
@@ -105,12 +130,20 @@ export const DonutChart: React.FC<DonutChartProps> = ({
           )}
 
           {/* Reorder Arrows */}
-          <div className="flex items-center gap-0.5 border border-slate-700 rounded-lg bg-slate-800/60 p-0.5">
+          <div
+            className={`flex items-center gap-0.5 border rounded-lg p-0.5 ${
+              isLight ? 'border-slate-300 bg-slate-100' : 'border-slate-700 bg-slate-800/60'
+            }`}
+          >
             {onMoveLeft && canMoveLeft && (
               <button
                 onClick={onMoveLeft}
                 title="Move left/up in layout"
-                className="p-1 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700 transition-colors"
+                className={`p-1 rounded transition-colors ${
+                  isLight
+                    ? 'text-slate-600 hover:text-indigo-600 hover:bg-slate-200'
+                    : 'text-slate-400 hover:text-indigo-300 hover:bg-slate-700'
+                }`}
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
@@ -119,7 +152,11 @@ export const DonutChart: React.FC<DonutChartProps> = ({
               <button
                 onClick={onMoveRight}
                 title="Move right/down in layout"
-                className="p-1 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700 transition-colors"
+                className={`p-1 rounded transition-colors ${
+                  isLight
+                    ? 'text-slate-600 hover:text-indigo-600 hover:bg-slate-200'
+                    : 'text-slate-400 hover:text-indigo-300 hover:bg-slate-700'
+                }`}
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -130,7 +167,11 @@ export const DonutChart: React.FC<DonutChartProps> = ({
             <button
               onClick={() => onDeleteWidget(widget.id)}
               title="Delete widget"
-              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+              className={`p-1.5 rounded-lg transition-colors ${
+                isLight
+                  ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                  : 'text-slate-500 hover:text-rose-400 hover:bg-slate-800'
+              }`}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -147,7 +188,7 @@ export const DonutChart: React.FC<DonutChartProps> = ({
               cy="80"
               r="64"
               fill="transparent"
-              stroke="#1e293b"
+              stroke={isLight ? '#e2e8f0' : '#1e293b'}
               strokeWidth="20"
             />
             {slices.map((slice, i) => (
@@ -170,10 +211,18 @@ export const DonutChart: React.FC<DonutChartProps> = ({
 
           {/* Center text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider">
+            <span
+              className={`text-[10px] font-mono uppercase tracking-wider ${
+                isLight ? 'text-slate-500' : 'text-slate-400'
+              }`}
+            >
               {hoveredIdx !== null ? slices[hoveredIdx]?.label : 'Total'}
             </span>
-            <span className="text-sm font-bold text-white font-mono tabular-nums">
+            <span
+              className={`text-sm font-bold font-mono tabular-nums ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}
+            >
               {hoveredIdx !== null
                 ? `${slices[hoveredIdx]?.percentage.toFixed(1)}%`
                 : formatNumber(total)}
@@ -189,7 +238,13 @@ export const DonutChart: React.FC<DonutChartProps> = ({
               onMouseEnter={() => setHoveredIdx(i)}
               onMouseLeave={() => setHoveredIdx(null)}
               className={`flex items-center justify-between text-xs p-1 rounded cursor-pointer transition-colors ${
-                hoveredIdx === i ? 'bg-slate-800 text-white' : 'text-slate-300'
+                hoveredIdx === i
+                  ? isLight
+                    ? 'bg-slate-100 text-slate-900 font-semibold'
+                    : 'bg-slate-800 text-white'
+                  : isLight
+                  ? 'text-slate-700 hover:bg-slate-50'
+                  : 'text-slate-300 hover:bg-slate-800/40'
               }`}
             >
               <div className="flex items-center gap-2 truncate">
@@ -200,8 +255,14 @@ export const DonutChart: React.FC<DonutChartProps> = ({
                 <span className="truncate">{slice.label}</span>
               </div>
               <div className="flex items-center gap-2 font-mono tabular-nums shrink-0 ml-2">
-                <span className="text-slate-400 text-[11px]">{formatNumber(slice.value)}</span>
-                <span className="font-semibold text-slate-200 w-12 text-right">
+                <span className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {formatNumber(slice.value)}
+                </span>
+                <span
+                  className={`w-12 text-right ${
+                    isLight ? 'font-semibold text-slate-800' : 'font-semibold text-slate-200'
+                  }`}
+                >
                   {slice.percentage.toFixed(1)}%
                 </span>
               </div>

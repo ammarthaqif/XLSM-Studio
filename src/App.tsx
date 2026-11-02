@@ -31,6 +31,8 @@ import { SpreadsheetGrid } from './components/spreadsheet/SpreadsheetGrid';
 import { WidgetStudioModal } from './components/widgets/WidgetStudioModal';
 import { LegacyMacroStudio } from './components/macros/LegacyMacroStudio';
 import { ExcelUploadModal } from './components/upload/ExcelUploadModal';
+import { ExportPdfModal } from './components/modals/ExportPdfModal';
+import { useTheme } from './context/ThemeContext';
 
 // Icons
 import {
@@ -45,11 +47,16 @@ import {
   RotateCcw,
   CheckCircle2,
   Save,
-  LayoutGrid
+  LayoutGrid,
+  Sun,
+  Moon,
+  FileText
 } from 'lucide-react';
 import { exportSheetToCSV, exportAllSheetsToCSVZip } from './utils/excelParser';
 
 export default function App() {
+  const { theme, toggleTheme, isLight } = useTheme();
+
   // 1. Core State
   const [dataset, setDataset] = useState<Dataset>(() => {
     const cached = getLocalDatasets();
@@ -70,6 +77,7 @@ export default function App() {
   // 2. Modals, Notifications & Layout State
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [widgetModalOpen, setWidgetModalOpen] = useState(false);
+  const [exportPdfOpen, setExportPdfOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [csvDownloadToast, setCsvDownloadToast] = useState<{ message: string; filename: string; rows: number } | null>(null);
   const [layoutToast, setLayoutToast] = useState<string | null>(null);
@@ -281,64 +289,137 @@ export default function App() {
   }, [activeSheetWidgets]);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
+    <div
+      className={`min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200 ${
+        isLight ? 'bg-slate-50 text-slate-900' : 'bg-slate-900 text-slate-100'
+      }`}
+    >
       {/* Top Navigation Bar */}
-      <header className="flex items-center justify-between gap-8 px-6 py-3.5 border-b border-slate-800 bg-slate-950/70 backdrop-blur-md sticky top-0 z-40">
+      <header
+        className={`flex items-center justify-between gap-8 px-6 py-3.5 border-b backdrop-blur-md sticky top-0 z-40 transition-colors ${
+          isLight
+            ? 'border-slate-200 bg-white/90 shadow-sm'
+            : 'border-slate-800 bg-slate-950/70'
+        }`}
+      >
         {/* Zone 1: Brand title wordmark & Author attribution */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm">
             <FileSpreadsheet className="w-5 h-5" />
           </div>
-          <span className="text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0">
+          <span
+            className={`text-base font-bold tracking-tight whitespace-nowrap shrink-0 ${
+              isLight ? 'text-slate-900' : 'text-white'
+            }`}
+          >
             XLSM Cloud Studio
           </span>
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-900/90 border border-slate-800 text-slate-400">
-            Developed by <span className="text-indigo-400 font-semibold">Ammar Thaqif</span>
+          <span
+            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${
+              isLight
+                ? 'bg-slate-100 border-slate-200 text-slate-600'
+                : 'bg-slate-900/90 border-slate-800 text-slate-400'
+            }`}
+          >
+            Developed by <span className="text-indigo-500 font-semibold">Ammar Thaqif</span>
           </span>
         </div>
 
         {/* Zone 2: Concise single-line navigation tabs */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-400">
+        <nav
+          className={`hidden md:flex items-center gap-6 text-sm font-medium ${
+            isLight ? 'text-slate-600' : 'text-slate-400'
+          }`}
+        >
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`whitespace-nowrap shrink-0 transition-colors ${
-              activeTab === 'dashboard' ? 'text-white font-semibold' : 'hover:text-slate-200'
+            className={`whitespace-nowrap shrink-0 transition-colors pb-0.5 ${
+              activeTab === 'dashboard'
+                ? isLight
+                  ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                  : 'text-white font-semibold border-b-2 border-indigo-500'
+                : isLight
+                ? 'hover:text-slate-900'
+                : 'hover:text-slate-200'
             }`}
           >
             Dashboard
           </button>
           <button
             onClick={() => setActiveTab('spreadsheet')}
-            className={`whitespace-nowrap shrink-0 transition-colors ${
-              activeTab === 'spreadsheet' ? 'text-white font-semibold' : 'hover:text-slate-200'
+            className={`whitespace-nowrap shrink-0 transition-colors pb-0.5 ${
+              activeTab === 'spreadsheet'
+                ? isLight
+                  ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                  : 'text-white font-semibold border-b-2 border-indigo-500'
+                : isLight
+                ? 'hover:text-slate-900'
+                : 'hover:text-slate-200'
             }`}
           >
             Spreadsheet
           </button>
           <button
             onClick={() => setActiveTab('pivot')}
-            className={`whitespace-nowrap shrink-0 transition-colors ${
-              activeTab === 'pivot' ? 'text-white font-semibold' : 'hover:text-slate-200'
+            className={`whitespace-nowrap shrink-0 transition-colors pb-0.5 ${
+              activeTab === 'pivot'
+                ? isLight
+                  ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                  : 'text-white font-semibold border-b-2 border-indigo-500'
+                : isLight
+                ? 'hover:text-slate-900'
+                : 'hover:text-slate-200'
             }`}
           >
             Pivot Matrix
           </button>
           <button
             onClick={() => setActiveTab('macros')}
-            className={`whitespace-nowrap shrink-0 transition-colors flex items-center gap-1.5 ${
-              activeTab === 'macros' ? 'text-white font-semibold' : 'hover:text-slate-200'
+            className={`whitespace-nowrap shrink-0 transition-colors pb-0.5 flex items-center gap-1.5 ${
+              activeTab === 'macros'
+                ? isLight
+                  ? 'text-indigo-600 font-semibold border-b-2 border-indigo-600'
+                  : 'text-white font-semibold border-b-2 border-indigo-500'
+                : isLight
+                ? 'hover:text-slate-900'
+                : 'hover:text-slate-200'
             }`}
           >
-            <Code2 className="w-4 h-4 text-indigo-400" />
+            <Code2 className="w-4 h-4 text-indigo-500" />
             <span>Macro Studio</span>
-            <span className="text-[11px] font-mono px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/30">
+            <span
+              className={`text-[11px] font-mono px-1.5 py-0.2 rounded border ${
+                isLight
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  : 'bg-indigo-950 text-indigo-300 border-indigo-500/30'
+              }`}
+            >
               {dataset.legacyMacros.length}
             </span>
           </button>
         </nav>
 
-        {/* Zone 3: Primary Action + Quick Controls */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: Primary Action + Theme Toggle + Quick Controls */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
+              isLight
+                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-200'
+            }`}
+            title={isLight ? 'Switch to Deep Slate Dark Theme' : 'Switch to High-Contrast Light Theme'}
+          >
+            {isLight ? (
+              <Moon className="w-3.5 h-3.5 text-indigo-600" />
+            ) : (
+              <Sun className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span className="hidden sm:inline font-mono text-[11px]">
+              {isLight ? 'Dark' : 'Light'}
+            </span>
+          </button>
 
           {/* Primary Action Button: Ingest Excel */}
           <button
@@ -352,7 +433,9 @@ export default function App() {
           {/* Mobile menu toggle */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 text-slate-400 hover:text-white"
+            className={`md:hidden p-2 rounded-lg transition-colors ${
+              isLight ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-400 hover:text-white'
+            }`}
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -361,14 +444,36 @@ export default function App() {
 
       {/* Mobile Drawer Navigation */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-b border-slate-800 bg-slate-950 p-4 space-y-2 animate-in slide-in-from-top-2">
+        <div
+          className={`md:hidden border-b p-4 space-y-2 animate-in slide-in-from-top-2 ${
+            isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'
+          }`}
+        >
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-slate-800">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Navigation</span>
+            <button
+              onClick={toggleTheme}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border ${
+                isLight ? 'bg-slate-100 border-slate-200 text-slate-800' : 'bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              {isLight ? <Moon className="w-3.5 h-3.5 text-indigo-600" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
+              <span>{isLight ? 'Switch to Dark' : 'Switch to Light'}</span>
+            </button>
+          </div>
           <button
             onClick={() => {
               setActiveTab('dashboard');
               setMobileMenuOpen(false);
             }}
             className={`w-full text-left py-2 px-3 rounded-lg text-sm font-medium ${
-              activeTab === 'dashboard' ? 'bg-slate-800 text-white' : 'text-slate-400'
+              activeTab === 'dashboard'
+                ? isLight
+                  ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                  : 'bg-slate-800 text-white'
+                : isLight
+                ? 'text-slate-600 hover:bg-slate-100'
+                : 'text-slate-400'
             }`}
           >
             Dashboard
@@ -379,7 +484,13 @@ export default function App() {
               setMobileMenuOpen(false);
             }}
             className={`w-full text-left py-2 px-3 rounded-lg text-sm font-medium ${
-              activeTab === 'spreadsheet' ? 'bg-slate-800 text-white' : 'text-slate-400'
+              activeTab === 'spreadsheet'
+                ? isLight
+                  ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                  : 'bg-slate-800 text-white'
+                : isLight
+                ? 'text-slate-600 hover:bg-slate-100'
+                : 'text-slate-400'
             }`}
           >
             Spreadsheet
@@ -390,7 +501,13 @@ export default function App() {
               setMobileMenuOpen(false);
             }}
             className={`w-full text-left py-2 px-3 rounded-lg text-sm font-medium ${
-              activeTab === 'pivot' ? 'bg-slate-800 text-white' : 'text-slate-400'
+              activeTab === 'pivot'
+                ? isLight
+                  ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                  : 'bg-slate-800 text-white'
+                : isLight
+                ? 'text-slate-600 hover:bg-slate-100'
+                : 'text-slate-400'
             }`}
           >
             Pivot Matrix
@@ -401,18 +518,30 @@ export default function App() {
               setMobileMenuOpen(false);
             }}
             className={`w-full text-left py-2 px-3 rounded-lg text-sm font-medium ${
-              activeTab === 'macros' ? 'bg-slate-800 text-white' : 'text-slate-400'
+              activeTab === 'macros'
+                ? isLight
+                  ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                  : 'bg-slate-800 text-white'
+                : isLight
+                ? 'text-slate-600 hover:bg-slate-100'
+                : 'text-slate-400'
             }`}
           >
             Macro Studio ({dataset.legacyMacros.length})
           </button>
-          <div className="pt-3 border-t border-slate-800/80 px-3 text-xs text-slate-400">
+          <div
+            className={`pt-3 border-t px-3 text-xs ${
+              isLight ? 'border-slate-200 text-slate-600' : 'border-slate-800/80 text-slate-400'
+            }`}
+          >
             <div>
-              Developed by <span className="text-indigo-400 font-semibold">Ammar Thaqif</span>
+              Developed by <span className="text-indigo-600 dark:text-indigo-400 font-semibold">Ammar Thaqif</span>
             </div>
             <a
               href="mailto:ammarthaqif.ar@gmail.com"
-              className="text-[11px] font-mono text-slate-500 hover:text-indigo-300 transition-colors"
+              className={`text-[11px] font-mono transition-colors ${
+                isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500 hover:text-indigo-300'
+              }`}
             >
               ammarthaqif.ar@gmail.com
             </a>
@@ -423,10 +552,18 @@ export default function App() {
       {/* Main Viewport Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Workspace Context Kicker Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800/80">
+        <div
+          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b transition-colors ${
+            isLight ? 'border-slate-200' : 'border-slate-800/80'
+          }`}
+        >
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white font-sans">
+              <h1
+                className={`text-xl sm:text-2xl font-bold tracking-tight font-sans ${
+                  isLight ? 'text-slate-900' : 'text-white'
+                }`}
+              >
                 {dataset.name}
               </h1>
               <span className="text-xs font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
@@ -434,19 +571,31 @@ export default function App() {
               </span>
               <button
                 onClick={() => setActiveTab('macros')}
-                className="text-xs font-mono text-indigo-300 hover:text-white bg-indigo-950/70 hover:bg-indigo-900/80 px-2.5 py-0.5 rounded border border-indigo-500/40 transition-colors"
+                className={`text-xs font-mono px-2.5 py-0.5 rounded border transition-colors ${
+                  isLight
+                    ? 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+                    : 'text-indigo-300 hover:text-white bg-indigo-950/70 hover:bg-indigo-900/80 border-indigo-500/40'
+                }`}
                 title="View all extracted VBA macros from vbaProject.bin"
               >
                 {dataset.legacyMacros.length} Embedded Macros Extracted
               </button>
               <span
-                className="text-xs font-mono text-emerald-300 bg-emerald-950/70 px-2.5 py-0.5 rounded border border-emerald-500/40"
+                className={`text-xs font-mono px-2.5 py-0.5 rounded border ${
+                  isLight
+                    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    : 'text-emerald-300 bg-emerald-950/70 border-emerald-500/40'
+                }`}
                 title="All sheet protection passwords and workbook lock tags were stripped"
               >
                 Sheets Unprotected & Unlocked
               </span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-400 font-mono">
+            <div
+              className={`mt-1.5 flex flex-wrap items-center gap-2 text-xs font-mono ${
+                isLight ? 'text-slate-500' : 'text-slate-400'
+              }`}
+            >
               <span>{dataset.filename}</span>
               <span aria-hidden="true">·</span>
               <span>{dataset.sheets.length} Sheets</span>
@@ -463,7 +612,11 @@ export default function App() {
             <select
               value={activeSheetName}
               onChange={(e) => setActiveSheetName(e.target.value)}
-              className="bg-slate-800/90 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
+              className={`border rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-indigo-500 ${
+                isLight
+                  ? 'bg-white border-slate-300 text-slate-800'
+                  : 'bg-slate-800/90 border-slate-700 text-slate-200'
+              }`}
             >
               {dataset.sheets.map((s) => (
                 <option key={s.name} value={s.name}>
@@ -474,37 +627,67 @@ export default function App() {
 
             {/* Layout Persisted Status Badge */}
             <span
-              className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-1.5 rounded-lg shadow-sm"
+              className={`hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1.5 rounded-lg border shadow-sm ${
+                isLight
+                  ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                  : 'text-emerald-400 bg-emerald-950/60 border-emerald-500/30'
+              }`}
               title="Widget order, widths, and views are automatically persisted to localStorage across sessions"
             >
-              <Save className="w-3.5 h-3.5 text-emerald-400" />
+              <Save className="w-3.5 h-3.5 text-emerald-500" />
               <span>Layout Persisted</span>
             </span>
 
             {/* Reset Layout Button */}
             <button
               onClick={handleResetLayout}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-lg shadow-sm transition-colors"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-lg shadow-sm transition-colors ${
+                isLight
+                  ? 'text-slate-700 bg-white hover:bg-slate-100 hover:text-slate-900 border-slate-300'
+                  : 'text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white border-slate-700'
+              }`}
               title="Reset dashboard widgets and layout ordering to default arrangement"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+              <RotateCcw className={`w-3.5 h-3.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`} />
               <span>Reset Layout</span>
             </button>
 
             {/* Download CSV Action Button */}
             <button
               onClick={() => handleDownloadCSV(false)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/40 rounded-lg shadow-sm transition-all hover:text-white"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-sm transition-all border ${
+                isLight
+                  ? 'text-emerald-800 bg-emerald-100/80 hover:bg-emerald-200/80 border-emerald-300'
+                  : 'text-emerald-300 bg-emerald-950/80 hover:bg-emerald-900 border-emerald-500/40 hover:text-white'
+              }`}
               title={`Extract and download active sheet (${activeSheetName}) as standard RFC-4180 CSV`}
             >
-              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <Download className="w-3.5 h-3.5 text-emerald-500" />
               <span>Download CSV</span>
+            </button>
+
+            {/* Export PDF Report Action Button */}
+            <button
+              onClick={() => setExportPdfOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-sm transition-all border ${
+                isLight
+                  ? 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200'
+                  : 'text-indigo-300 bg-indigo-950/80 hover:bg-indigo-900 border-indigo-500/40 hover:text-white'
+              }`}
+              title="Export full executive dashboard report with all active charts & KPIs as a professional PDF"
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Export PDF</span>
             </button>
 
             {/* Custom Widget Builder trigger */}
             <button
               onClick={() => setWidgetModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg shadow-sm transition-colors"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-sm transition-colors border ${
+                isLight
+                  ? 'text-slate-700 bg-white hover:bg-slate-100 border-slate-300'
+                  : 'text-slate-200 bg-slate-800 hover:bg-slate-700 border-slate-700'
+              }`}
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Widget</span>
@@ -561,7 +744,7 @@ export default function App() {
 
         {/* Tab 1: Live Interactive Dashboard */}
         {activeTab === 'dashboard' && (
-          <div className="space-y-6">
+          <div id="dashboard-export-container" className="space-y-6">
             {/* KPI Metrics Row with Drag & Drop and Order Controls */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {metricWidgets.map((w, idx) => (
@@ -700,21 +883,39 @@ export default function App() {
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-white">Active Spreadsheet Ledger</h3>
-                  <span className="text-xs font-mono text-slate-400">({activeSheetName})</span>
+                  <h3
+                    className={`text-sm font-semibold ${
+                      isLight ? 'text-slate-900' : 'text-white'
+                    }`}
+                  >
+                    Active Spreadsheet Ledger
+                  </h3>
+                  <span
+                    className={`text-xs font-mono ${
+                      isLight ? 'text-slate-500' : 'text-slate-400'
+                    }`}
+                  >
+                    ({activeSheetName})
+                  </span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <button
                     onClick={() => handleDownloadCSV(false)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-300 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/40 rounded-lg transition-colors shadow-sm"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors shadow-sm border ${
+                      isLight
+                        ? 'text-emerald-800 bg-emerald-100/90 hover:bg-emerald-200 border-emerald-300'
+                        : 'text-emerald-300 bg-emerald-950/70 hover:bg-emerald-900 border-emerald-500/40'
+                    }`}
                     title={`Extract and download ${activeSheetName} as CSV`}
                   >
-                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <Download className="w-3.5 h-3.5 text-emerald-500" />
                     <span>Download CSV</span>
                   </button>
                   <button
                     onClick={() => setActiveTab('spreadsheet')}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 font-medium"
+                    className={`text-xs font-medium transition-colors ${
+                      isLight ? 'text-indigo-600 hover:text-indigo-800' : 'text-indigo-400 hover:text-indigo-300'
+                    }`}
                   >
                     Open Full Spreadsheet View →
                   </button>
@@ -761,14 +962,25 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-950 py-4 px-6 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-4">
+      <footer
+        className={`border-t py-4 px-6 text-xs flex flex-wrap items-center justify-between gap-4 transition-colors ${
+          isLight
+            ? 'border-slate-200 bg-white text-slate-600 shadow-sm'
+            : 'border-slate-800 bg-slate-950 text-slate-500'
+        }`}
+      >
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-slate-300">XLSM Cloud Studio</span>
+          <span className={`font-semibold ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>
+            XLSM Cloud Studio
+          </span>
           <span>·</span>
           <span>Macro Extraction & Unprotection Engine</span>
           <span>·</span>
-          <span className="text-slate-400">
-            Developed by <span className="text-indigo-400 font-semibold">Ammar Thaqif</span>
+          <span className={isLight ? 'text-slate-600' : 'text-slate-400'}>
+            Developed by{' '}
+            <span className={isLight ? 'text-indigo-600 font-semibold' : 'text-indigo-400 font-semibold'}>
+              Ammar Thaqif
+            </span>
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-4">
@@ -778,7 +990,9 @@ export default function App() {
           <span>·</span>
           <a
             href="mailto:ammarthaqif.ar@gmail.com"
-            className="text-slate-400 hover:text-indigo-300 transition-colors font-mono text-[11px]"
+            className={`font-mono text-[11px] transition-colors ${
+              isLight ? 'text-slate-600 hover:text-indigo-600' : 'text-slate-400 hover:text-indigo-300'
+            }`}
           >
             ammarthaqif.ar@gmail.com
           </a>
@@ -797,6 +1011,17 @@ export default function App() {
         onClose={() => setWidgetModalOpen(false)}
         dataset={dataset}
         onSaveWidget={handleSaveWidget}
+      />
+
+      <ExportPdfModal
+        isOpen={exportPdfOpen}
+        onClose={() => setExportPdfOpen(false)}
+        dataset={dataset}
+        activeSheetName={activeSheetName}
+        widgets={widgets}
+        targetElementId="dashboard-export-container"
+        currentTheme={theme}
+        onNotification={(msg) => setLayoutToast(msg)}
       />
     </div>
   );

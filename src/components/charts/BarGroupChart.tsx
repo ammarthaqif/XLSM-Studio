@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ReportingWidget, Dataset, WidgetWidth } from '../../types/dashboard';
 import { Trash2, ArrowUpDown, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 interface BarGroupChartProps {
   widget: ReportingWidget;
@@ -23,6 +24,7 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
   canMoveRight,
   onChangeWidth
 }) => {
+  const { isLight } = useTheme();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [sortDescending, setSortDescending] = useState(true);
 
@@ -73,16 +75,37 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
   };
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-5 shadow-sm transition-all hover:border-slate-700">
+    <div
+      className={`rounded-xl border p-5 shadow-sm transition-all ${
+        isLight
+          ? 'bg-white border-slate-200 hover:border-slate-300 text-slate-900 shadow-slate-100'
+          : 'border-slate-800 bg-slate-900/90 hover:border-slate-700 text-white'
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-slate-600 hover:text-slate-400 cursor-grab active:cursor-grabbing p-0.5" title="Drag to reorder chart in layout">
+          <span
+            className={`cursor-grab active:cursor-grabbing p-0.5 ${
+              isLight ? 'text-slate-400 hover:text-slate-600' : 'text-slate-600 hover:text-slate-400'
+            }`}
+            title="Drag to reorder chart in layout"
+          >
             <GripVertical className="w-4 h-4" />
           </span>
           <div>
-            <h4 className="text-sm font-semibold tracking-tight text-white truncate">{widget.title}</h4>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Grouped by <span className="text-slate-300 font-medium">{widget.xAxis}</span> · {widget.aggregation.toUpperCase()}
+            <h4
+              className={`text-sm font-semibold tracking-tight truncate ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}
+            >
+              {widget.title}
+            </h4>
+            <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+              Grouped by{' '}
+              <span className={`font-medium ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>
+                {widget.xAxis}
+              </span>{' '}
+              · {widget.aggregation.toUpperCase()}
             </p>
           </div>
         </div>
@@ -91,7 +114,11 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
           <button
             onClick={() => setSortDescending(!sortDescending)}
             title="Toggle sort order"
-            className="flex items-center gap-1 px-2 py-1 text-xs font-mono rounded-md border border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white transition-colors"
+            className={`flex items-center gap-1 px-2 py-1 text-xs font-mono rounded-md border transition-colors ${
+              isLight
+                ? 'border-slate-300 bg-slate-100 text-slate-700 hover:text-slate-900 hover:bg-slate-200'
+                : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white'
+            }`}
           >
             <ArrowUpDown className="w-3.5 h-3.5" />
             <span>{sortDescending ? 'High-Low' : 'Low-High'}</span>
@@ -102,7 +129,11 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
             <select
               value={widget.width}
               onChange={(e) => onChangeWidth(e.target.value as WidgetWidth)}
-              className="bg-slate-800/90 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 font-mono focus:outline-none focus:border-indigo-500"
+              className={`border rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:border-indigo-500 ${
+                isLight
+                  ? 'bg-slate-50 border-slate-300 text-slate-700'
+                  : 'bg-slate-800/90 border-slate-700 text-slate-300'
+              }`}
               title="Adjust widget layout width"
             >
               <option value="1/3">1/3 Width</option>
@@ -113,12 +144,20 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
           )}
 
           {/* Reorder Arrows */}
-          <div className="flex items-center gap-0.5 border border-slate-700 rounded-lg bg-slate-800/60 p-0.5">
+          <div
+            className={`flex items-center gap-0.5 border rounded-lg p-0.5 ${
+              isLight ? 'border-slate-300 bg-slate-100' : 'border-slate-700 bg-slate-800/60'
+            }`}
+          >
             {onMoveLeft && canMoveLeft && (
               <button
                 onClick={onMoveLeft}
                 title="Move left/up in layout"
-                className="p-1 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700 transition-colors"
+                className={`p-1 rounded transition-colors ${
+                  isLight
+                    ? 'text-slate-600 hover:text-indigo-600 hover:bg-slate-200'
+                    : 'text-slate-400 hover:text-indigo-300 hover:bg-slate-700'
+                }`}
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
@@ -127,7 +166,11 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
               <button
                 onClick={onMoveRight}
                 title="Move right/down in layout"
-                className="p-1 rounded text-slate-400 hover:text-indigo-300 hover:bg-slate-700 transition-colors"
+                className={`p-1 rounded transition-colors ${
+                  isLight
+                    ? 'text-slate-600 hover:text-indigo-600 hover:bg-slate-200'
+                    : 'text-slate-400 hover:text-indigo-300 hover:bg-slate-700'
+                }`}
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -138,7 +181,11 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
             <button
               onClick={() => onDeleteWidget(widget.id)}
               title="Delete widget"
-              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+              className={`p-1.5 rounded-lg transition-colors ${
+                isLight
+                  ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                  : 'text-slate-500 hover:text-rose-400 hover:bg-slate-800'
+              }`}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -160,22 +207,52 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
               className="group cursor-pointer"
             >
               <div className="flex items-center justify-between text-xs mb-1">
-                <span className={`font-medium transition-colors ${isHovered ? 'text-amber-300' : 'text-slate-300'}`}>
+                <span
+                  className={`font-medium transition-colors ${
+                    isHovered
+                      ? isLight
+                        ? 'text-amber-700 font-bold'
+                        : 'text-amber-300'
+                      : isLight
+                      ? 'text-slate-800'
+                      : 'text-slate-300'
+                  }`}
+                >
                   {item.label}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-slate-500 font-mono">({item.count} rows)</span>
-                  <span className="font-mono tabular-nums font-semibold text-slate-100">
+                  <span
+                    className={`text-[11px] font-mono ${
+                      isLight ? 'text-slate-500' : 'text-slate-500'
+                    }`}
+                  >
+                    ({item.count} rows)
+                  </span>
+                  <span
+                    className={`font-mono tabular-nums font-semibold ${
+                      isLight ? 'text-slate-900' : 'text-slate-100'
+                    }`}
+                  >
                     {formatNumber(item.value)}
                   </span>
                 </div>
               </div>
 
               {/* Bar track and fill */}
-              <div className="relative w-full h-3 bg-slate-800/80 rounded overflow-hidden">
+              <div
+                className={`relative w-full h-3 rounded overflow-hidden ${
+                  isLight ? 'bg-slate-100' : 'bg-slate-800/80'
+                }`}
+              >
                 <div
                   className={`h-full transition-all duration-300 ease-out rounded ${
-                    isHovered ? 'bg-amber-400' : 'bg-amber-500/80'
+                    isHovered
+                      ? isLight
+                        ? 'bg-amber-500'
+                        : 'bg-amber-400'
+                      : isLight
+                      ? 'bg-amber-500/85'
+                      : 'bg-amber-500/80'
                   }`}
                   style={{ width: `${pct}%` }}
                 />
@@ -185,7 +262,11 @@ export const BarGroupChart: React.FC<BarGroupChartProps> = ({
         })}
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-500 font-mono">
+      <div
+        className={`mt-4 pt-3 border-t flex items-center justify-between text-xs font-mono ${
+          isLight ? 'border-slate-200 text-slate-500' : 'border-slate-800 text-slate-500'
+        }`}
+      >
         <span>Total categories: {aggregatedData.length}</span>
         <span>Peak: {aggregatedData[0] ? formatNumber(aggregatedData[0].value) : 0}</span>
       </div>

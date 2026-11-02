@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+:root.light,
+[data-theme="light"],
+.theme-light {
+  color-scheme: light;
+}
+
+/* Print & High-Contrast Visibility Optimizations */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  header,
+  footer,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+}
